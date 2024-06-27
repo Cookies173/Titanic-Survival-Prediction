@@ -1,0 +1,425 @@
+---
+title: "TITANIC"
+author: "Meet"
+date: "2023-03-28"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+# Working on data
+
+#### Loading required library to work upon data in *R*
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(randomForest)
+```
+
+#### Importing data from the train model of *Titanic* dataset
+
+```{r}
+train_df <- read_csv("train.csv", show_col_types = FALSE)
+test_df <- read_csv("test.csv", show_col_types = FALSE)
+```
+
+Now that we have imported the datasets, lets review them and observe some insights.
+
+#### Review the dataset
+
+```{r}
+head(train_df)
+glimpse(train_df)
+str(train_df)
+summary(train_df)
+summary(test_df)
+```
+
+We can see in the summary that **177** missing values of Age is there in the *train_df* dataset but Age is an important factor in the survival on *Titanic*.
+
+### Cleaning Data
+
+#### Missing Values
+
+Now lets make the **missing values** and the **space values** if any into **NA** to avoid any future confusions.\
+We will create a copy of *train_df* and name it *train_df2*
+
+```{r}
+train_df2 <- train_df
+train_df2[train_df2=="" | train_df2==" "] <- NA
+```
+
+Lets do the same for *test_df* dataset.
+
+```{r}
+test_df2 <- test_df
+test_df2[test_df2=="" | test_df2==" "] <- NA
+```
+
+For future convenience, let's combine the dataset but the main problem is that the *test* dataset don't contain the column **Survived**.\
+So we are going to bind the column with values **NA**.
+
+```{r}
+test_df2 <- cbind(test_df2, Survived = NA)
+```
+
+Now that we have added the column to the dataset, both the datasets contains same columns so now we will bind the rows to combine both data.
+
+```{r}
+alldata <- rbind(train_df2, test_df2)
+```
+
+Take a look at the summary of the combined data
+
+```{r}
+summary(alldata)
+```
+
+### Observing Data
+
+Now we observed that the there is one missing value in *Fare* column. So let's observe the profile of the row to fill the data.
+
+```{r}
+alldata %>% 
+  filter(is.na(Fare))
+```
+
+#### Assigning suitable value in Fare
+
+```{r}
+fare_df <- alldata %>% 
+  filter(Embarked=="S", Sex=="male", Pclass==3, Age>=55)
+head(fare_df)
+```
+
+From the data we can get idea about the **Median** of the data.\
+Now let's check and verify the data that is there any variation in Fare prices in *Pclass=3*.
+
+```{r warning=FALSE}
+ggplot(data=alldata %>% filter(Pclass==3))+
+  geom_histogram(mapping=aes(x=Fare))+
+  labs(x="Fare Prices", y="No. of Passengers", title="Mapping of Fare Prices")
+ggsave("Fare Prices.png")
+```
+
+It's around the **median** which is obtained by the filtered data.\
+Now lets calculate the median and assign the value to **NA**.
+
+```{r}
+alldata$Fare[is.na(alldata$Fare)] <- median(fare_df$Fare, na.rm=T)
+
+alldata %>% 
+  filter(Age==60.5)
+```
+
+**NOTE**: *na.rm* is used to remove the missing values from the input vector.
+
+#### Converting *Sex* column into numericals
+
+Let's check the **NA** values in the *Sex* column if any.
+
+```{r}
+table(is.na(alldata$Sex))
+```
+
+There is no **NA** values.\
+Now, assign the value **1** for *male* and **0** for *female*.
+
+```{r}
+alldata$Sex[alldata$Sex == "male"] <- 1
+alldata$Sex[alldata$Sex == "female"] <- 0
+head(alldata)
+```
+
+## Name
+
+### Separating Title
+
+Lets take a look at the sample of the 30 *Name* column to draw the conclusions about professional title they have.
+
+```{r}
+sample(alldata$Name, 30)
+```
+
+Let's separate the *Professional_title* data from *Name* column.
+
+```{r}
+alldata <- alldata %>% 
+  separate(Name, into=c('name2', 'name3'), sep=', ')
+```
+
+```{r}
+alldata <- alldata %>% 
+  separate(name3, into=c('Professional_title', 'name4'), sep='. ')
+```
+
+```{r}
+alldata <- alldata %>% 
+  select(-name2,-name4)
+```
+
+### Mapping
+
+Check for the **NA** if any,
+
+```{r}
+table(is.na(alldata$Professional_title))
+```
+
+As there is no **NA** so lets make a plot of total counts of all titles.
+
+```{r}
+ggplot(data=alldata) +
+  geom_bar(mapping=aes(x=Professional_title), fill='blue') +
+  labs(title="Professional Title") +
+  theme(axis.text.x = element_text(angle=45))
+ggsave("Professional Title.png")
+```
+
+Now, we observe the common title to have the idea about Survival for different title holders.
+
+```{r message=FALSE, warning=FALSE}
+ggplot(data = alldata %>% filter(Professional_title %in% c("Mr", "Miss", "Mrs", "Master"))) +
+  geom_histogram(mapping=aes(x=Survived, fill=Professional_title))+
+  facet_grid(~Professional_title)+
+  labs(title="Mapping of common title", x="Survived=1")+
+  theme(axis.text.x=element_text(angle=90))
+ggsave("Professional Title Vs Survived.png")
+```
+
+### Converting the rare titles into popular ones
+
+Let's observe the data of *male title* and draw some insights about them.
+
+```{r}
+alldata %>% 
+  filter(Professional_title %in% c("Capt", "Col", "Don", "Dr", "Jonkheer", "Major", "Rev", "Sir"))
+```
+
+Let's rename the titles like *Capt*, *Col*, *Don*, *Dr*, *Jonkheer*, *Major*, *Rev*, *Sir* into *Mr* for making our life easy as there is no important insight and No. of Survived are equivalent to *Mr*....
+
+```{r}
+alldata$Professional_title[alldata$Professional_title %in% c("Capt", "Col", "Don", "Dr", "Jonkheer", "Major", "Rev", "Sir")] <- "Mr"
+```
+
+Do the same process with *female title*.
+
+```{r}
+alldata %>% 
+  filter(Professional_title %in% c("Dona", "Lady", "Mlle", "Mme", "th"))
+```
+
+Let's rename the titles like *Dona*, *Lady*, *Mlle*, *Mme*, *th* into *Mrs* and *Ms* into *Miss* as Ms is basically the short of Miss.
+
+```{r}
+alldata$Professional_title[alldata$Professional_title %in% c("Dona", "Lady", "Mlle", "Mme", "th")] <- "Mrs"
+```
+
+```{r}
+alldata$Professional_title[alldata$Professional_title == "Ms"] <- "Miss"
+```
+
+```{r}
+ggplot(data=alldata) +
+  geom_bar(mapping=aes(x=Professional_title)) +
+  labs(title="Professional Title (Only Populars)") +
+  theme(axis.text.x = element_text(angle=45))
+ggsave("Professional Title (Only Populars).png")
+```
+
+## Embarked
+
+First of all see the **NA** value if any in the *Embarked* column
+
+```{r}
+table(is.na(alldata$Embarked))
+```
+
+### Observe the data
+
+Review the both rows and draw the conclusion to fill the missing values.
+
+```{r}
+alldata %>% 
+  filter(is.na(Embarked))
+```
+
+We can see that both have *Pclass*=1, same *Ticket* number, *Fare*=80, same *Cabin* and both *female*.
+
+```{r}
+ggplot(alldata %>% filter(Pclass==1)) +
+  geom_boxplot(mapping=aes(x=Embarked, y=Fare, fill=Sex)) +
+  labs(title="Mapping of data taking Pclass=1")
+ggsave("Pclass.png")
+```
+
+With the help of plot we can conclude that missing value is the **C**.
+
+### Filling the missing value
+
+```{r}
+alldata$Embarked[is.na(alldata$Embarked)] <- "C"
+```
+
+## Age
+
+Let's see the **NA** value if any in the *Age* column.
+
+```{r}
+table(is.na(alldata$Age))
+```
+
+Let' draw a plot to have a better idea about *age* and *title* as they can have some relationship to fill our missing.
+
+```{r}
+ggplot(alldata) +
+  geom_boxplot(mapping=aes(x=Professional_title, y=Age)) +
+  labs(title = "Median of the different titles")
+ggsave("Median of Titles.png")
+```
+
+Let's take the **median** of the respective *Professional_title* and fill the missing value respectively.
+
+### Filling Master title
+
+```{r}
+master_df <- alldata %>% 
+  filter(Professional_title=="Master")
+master_df$Age[is.na(master_df$Age)] <- median(master_df$Age, na.rm=T)
+```
+
+### Filling Miss title
+
+```{r}
+miss_df <- alldata %>% 
+  filter(Professional_title=="Miss")
+miss_df$Age[is.na(miss_df$Age)] <- median(miss_df$Age, na.rm=T)
+```
+
+### Filling Mr title
+
+```{r}
+mr_df <- alldata %>% 
+  filter(Professional_title=="Mr")
+mr_df$Age[is.na(mr_df$Age)] <- median(mr_df$Age, na.rm=T)
+```
+
+### Filling Mrs title
+
+```{r}
+mrs_df <- alldata %>% 
+  filter(Professional_title=="Mrs")
+mrs_df$Age[is.na(mrs_df$Age)] <- median(mrs_df$Age, na.rm=T)
+```
+
+### Binding
+
+Now, merge the data into again *alldata* dataset.
+
+```{r}
+alldata <- rbind(master_df, miss_df, mr_df, mrs_df)
+alldata <- alldata %>% 
+  arrange(PassengerId)
+```
+
+## Ticket
+
+Check the **NA** if any,
+
+```{r}
+table(is.na(alldata$Ticket))
+```
+
+Take the sample and observe the data of *ticket* column.
+
+```{r}
+sample(alldata$Ticket, 30)
+```
+
+Can't have any relevance to the survival of the passengers, so decided to remove the column
+
+```{r}
+alldata <- alldata %>% 
+  select(-Ticket)
+```
+
+## Pclass
+
+Check the **NA** if any,
+
+```{r}
+table(is.na(alldata$Pclass))
+```
+
+## SibSp
+
+Check the **NA** if any,
+
+```{r}
+table(is.na(alldata$SibSp))
+```
+
+## Parch
+
+Check the **NA** if any,
+
+```{r}
+table(is.na(alldata$Parch))
+```
+
+## Cabin
+
+Check the **NA** if any,
+
+```{r}
+table(is.na(alldata$Cabin))
+```
+
+As there are many empty cells in the *Cabin* column so best possible solution is to drop the column only.
+
+```{r}
+alldata <- alldata %>% 
+  select(-Cabin)
+```
+
+# Appling Model into our cleaned data
+
+### Let's apply a randomForest
+
+Honestly didn't know the shit about this models right now :(\
+but let's apply to our data.
+
+```{r}
+i <- is.na(alldata$Survived)
+myforest <- randomForest(data=alldata[!i,], Survived ~ Pclass + Age + SibSp + Parch + Fare + Embarked + Sex + Professional_title,
+                             ntree=10000, sampsize = 400, mtry=4)
+```
+
+Now let's look the **model** works decent or not...
+
+```{r}
+table(round(predict(myforest, newdata=alldata[!i,])) == alldata[!i,]$Survived)
+```
+
+Add the predictions into our data for submissions
+
+```{r}
+alldata$forestpred <- round(predict(myforest, newdata=alldata))
+rm(myforest)
+```
+
+Export the **.csv** file
+
+```{r}
+write.csv(alldata %>% 
+  filter(PassengerId %in% c(892:1310)) %>% 
+  select(PassengerId, forestpred) %>% 
+  rename(Survived = forestpred), "submission.csv")
+```
+
+Now deleted the No. column in the Excel manually and submitted the data........**0.77272**\
+Great for my first Project.
+
+Thank you
